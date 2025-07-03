@@ -6,7 +6,7 @@
 // webhookの結果をまたDBに書き込む
 // レスポンスは、Post.idとstatusを返す。
 
-import { err, Result, ResultAsync } from "neverthrow"
+import { err, ok, Result, ResultAsync } from "neverthrow"
 
 type BlogPostWithoutId = {
   title: string,
@@ -29,11 +29,12 @@ type NetworkError = {
 const NetworkError = (message: string): NetworkError => {
   return {_kind: "network_error", message}
 }
-
-
-const post: BlogPostWithoutId = {
-  title: "AAA",
-  body: "BBBBBB\nCCCCCC",
+type ValidateError = {
+  _kind: "validate_error",
+  message: string
+}
+const ValidateError = (message: string): ValidateError => {
+  return {_kind: "validate_error", message}
 }
 
 const validatePost = (post: BlogPostWithoutId): boolean => {
@@ -59,25 +60,58 @@ const storeWebhookResult = async (post: BlogPost, status: number): Promise<void>
   return
 }
 
-const validatePostR = Result.fromThrowable(validatePost)
+const validatePostR = (post: BlogPostWithoutId): Result<BlogPostWithoutId, ValidateError> =>
+  validatePost(post) ? ok(post) : err(ValidateError("validate error"))
 
-const storePostR = (post: BlogPostWithoutId) => ResultAsync.fromPromise(storePost(post), (e) => {
+const storePostR = (post: BlogPostWithoutId) => ResultAsync.fromPromise(storePost(post), (e: any) => {
   return DatabaseError(e.message)
 })
 
-const sendWebhookR = (post: BlogPost) => ResultAsync.fromPromise(sendWebhook(post), (e) => {
+const sendWebhookR = (post: BlogPost) => ResultAsync.fromPromise(sendWebhook(post), (e: any) => {
   return NetworkError(e.message)
 })
 
-const storeWebhookResultR = (post: BlogPost, status: number) => ResultAsync.fromPromise(storeWebhookResult(post, status), (e) => {
+const storeWebhookResultR = (post: BlogPost, status: number) => ResultAsync.fromPromise(storeWebhookResult(post, status), (e: any) => {
   return DatabaseError(e.message)
 })
 
-validatePostR(post).asyncAndThen((b) => {
-  if (b) return storePostR(post);
-  return err(NetworkError("validate error"))
-}).andThen((post) => sendWebhookR(post))
-.andThen((status) => storeWebhookResultR(XXX, status))
+import express from "express"
+const app = express()
+
+app.post("/", (req, res) => {
+  // post = req.body
+  const post: BlogPostWithoutId = {
+    title: "AAA",
+    body: "BBBBBB\nCCCCCC",
+  }
+
+  validatePostR(post)
+    .asyncAndThen(storePostR)
+    .andThen((post) => sendWebhookR(post).map((status) => {
+      return {post, status}
+    }))
+    .andThen(({post, status}) => storeWebhookResultR(post, status).map(() => ({post, status})))
+    .match(
+      ({post, status}) => {
+        res.json({post_id: post.id, status })
+      },
+      (err) => {
+        switch (err._kind) {
+          case "validate_error": {
+            res.status(400).send(err.message)
+          }
+          case "database_error": {
+            res.status(500).send(err.message)
+          }
+          case "network_error": {
+            res.status(500).send(err.message)
+          }
+        }
+      }
+    )
+})
+
+app.listen(3000)
 
 // if (validatePost(post)) {
 //   try {
