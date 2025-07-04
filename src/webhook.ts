@@ -63,17 +63,14 @@ const storeWebhookResult = async (post: BlogPost, status: number): Promise<void>
 const validatePostR = (post: BlogPostWithoutId): Result<BlogPostWithoutId, ValidateError> =>
   validatePost(post) ? ok(post) : err(ValidateError("validate error"))
 
-const storePostR = (post: BlogPostWithoutId) => ResultAsync.fromPromise(storePost(post), (e: any) => {
-  return DatabaseError(e.message)
-})
+const storePostR = (post: BlogPostWithoutId) =>
+  ResultAsync.fromPromise(storePost(post), (e: any) => DatabaseError(e.message))
 
-const sendWebhookR = (post: BlogPost) => ResultAsync.fromPromise(sendWebhook(post), (e: any) => {
-  return NetworkError(e.message)
-})
+const sendWebhookR = (post: BlogPost) =>
+  ResultAsync.fromPromise(sendWebhook(post), (e: any) => NetworkError(e.message))
 
-const storeWebhookResultR = (post: BlogPost, status: number) => ResultAsync.fromPromise(storeWebhookResult(post, status), (e: any) => {
-  return DatabaseError(e.message)
-})
+const storeWebhookResultR = (post: BlogPost, status: number) =>
+  ResultAsync.fromPromise(storeWebhookResult(post, status), (e: any) => DatabaseError(e.message))
 
 import express from "express"
 const app = express()
@@ -87,10 +84,12 @@ app.post("/", (req, res) => {
 
   validatePostR(post)
     .asyncAndThen(storePostR)
-    .andThen((post) => sendWebhookR(post).map((status) => {
-      return {post, status}
-    }))
-    .andThen(({post, status}) => storeWebhookResultR(post, status).map(() => ({post, status})))
+    .andThen((post) =>
+      sendWebhookR(post)
+        .map((status) => ({post, status})))
+    .andThen(({post, status}) =>
+      storeWebhookResultR(post, status)
+        .map(() => ({post, status})))
     .match(
       ({post, status}) => {
         res.json({post_id: post.id, status })
@@ -99,12 +98,12 @@ app.post("/", (req, res) => {
         switch (err._kind) {
           case "validate_error": {
             res.status(400).send(err.message)
+            break
           }
-          case "database_error": {
-            res.status(500).send(err.message)
-          }
+          case "database_error":
           case "network_error": {
             res.status(500).send(err.message)
+            break
           }
         }
       }

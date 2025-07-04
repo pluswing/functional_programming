@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "express": "^5.1.0",
+    "fp-ts": "^2.16.10",
     "neverthrow": "^8.2.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
