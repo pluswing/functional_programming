@@ -97,7 +97,7 @@ app.post("/", (req, res) => {
     TE.bind('status', ({ post }) => sendWebhookR(post)),
     TE.tap(({post, status}) => storeWebhookResultR(post, status)),
     TE.fold(
-      (left) => {
+      (left) => async () => {
         switch (left._kind) {
           case "validate_error": {
             res.status(400).send(left.message)
@@ -110,22 +110,11 @@ app.post("/", (req, res) => {
           }
         }
       },
-      ({post, status}) => {
+      ({post, status}) => async () => {
         res.json({post_id: post.id, status })
       },
     )
-  )
+  )()
 })
 
 app.listen(3000)
-
-// if (validatePost(post)) {
-//   try {
-//     const p = await storePost(post)
-//     const status = await sendWebhook(p)
-//     await storeWebhookResult(p, status)
-//     return {post_id: p.id, status}
-//   } catch {
-//     //
-//   }
-// }
