@@ -6,11 +6,7 @@
 // webhookの結果をまたDBに書き込む
 // レスポンスは、Post.idとstatusを返す。
 
-import { pipe } from 'fp-ts/function'
-import { Either } from 'fp-ts/Either'
-import * as E from 'fp-ts/Either'
-import { TaskEither } from 'fp-ts/TaskEither'
-import * as TE from 'fp-ts/TaskEither'
+import { Effect, pipe } from "effect"
 
 
 type BlogPostWithoutId = {
@@ -42,9 +38,6 @@ const ValidateError = (message: string): ValidateError => {
   return {_kind: "validate_error", message}
 }
 
-type AppError = DatabaseError | NetworkError | ValidateError
-
-
 const validatePost = (post: BlogPostWithoutId): boolean => {
   return post.title.length > 0;
 }
@@ -68,17 +61,26 @@ const storeWebhookResult = async (post: BlogPost, status: number): Promise<void>
   return
 }
 
-const validatePostR = (post: BlogPostWithoutId): Either<AppError, BlogPostWithoutId> =>
-  validatePost(post) ? E.right(post) : E.left(ValidateError("validate error"))
+const validatePostR = (post: BlogPostWithoutId): Effect.Effect<BlogPostWithoutId, ValidateError> =>
+  validatePost(post) ? Effect.succeed(post) : Effect.fail(ValidateError("validate error"))
 
-const storePostR = (post: BlogPostWithoutId): TaskEither<AppError, BlogPost> =>
-  TE.tryCatch(() => storePost(post), (e: any) => DatabaseError(e.message))
+const storePostR = (post: BlogPostWithoutId): Effect.Effect<BlogPost, DatabaseError> =>
+  Effect.tryPromise({
+    try: () => storePost(post),
+    catch: (e: any) => DatabaseError(e.message),
+  })
 
-const sendWebhookR = (post: BlogPost): TaskEither<AppError, number> =>
-  TE.tryCatch(() => sendWebhook(post), (e: any) => NetworkError(e.message))
+const sendWebhookR = (post: BlogPost): Effect.Effect<number, NetworkError> =>
+  Effect.tryPromise({
+    try: () => sendWebhook(post),
+    catch: (e: any) => NetworkError(e.message)
+  })
 
-const storeWebhookResultR = (post: BlogPost, status: number): TaskEither<AppError, void> =>
-  TE.tryCatch(() => storeWebhookResult(post, status), (e: any) => DatabaseError(e.message))
+const storeWebhookResultR = (post: BlogPost, status: number): Effect.Effect<void, DatabaseError> =>
+  Effect.tryPromise({
+    try: () => storeWebhookResult(post, status),
+    catch: (e: any) => DatabaseError(e.message)
+  })
 
 import express from "express"
 const app = express()
@@ -91,31 +93,31 @@ app.post("/", async (req, res) => {
   }
 
   const program = pipe(
-    TE.Do,
-    () => TE.fromEither(validatePostR(post)),
-    TE.bind('post', () => storePostR(post)),
-    TE.bind('status', ({ post }) => sendWebhookR(post)),
-    TE.tap(({post, status}) => storeWebhookResultR(post, status)),
-    TE.fold(
-      (left) => async () => {
-        switch (left._kind) {
+    Effect.Do,
+    () => validatePostR(post),
+    Effect.bind('post', () => storePostR(post)),
+    Effect.bind('status', ({ post }) => sendWebhookR(post)),
+    Effect.tap(({post, status}) => storeWebhookResultR(post, status)),
+    Effect.match({
+      onSuccess: ({post, status}) => {
+        res.json({post_id: post.id, status })
+      },
+      onFailure: (err) => {
+        switch (err._kind) {
           case "validate_error": {
-            res.status(400).send(left.message)
+            res.status(400).send(err.message)
             break
           }
           case "database_error":
           case "network_error": {
-            res.status(500).send(left.message)
+            res.status(500).send(err.message)
             break
           }
         }
       },
-      ({post, status}) => async () => {
-        res.json({post_id: post.id, status })
-      },
-    )
+    })
   )
-  await program()
+  await Effect.runPromise(program)
 })
 
 app.listen(3000)

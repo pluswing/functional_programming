@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "effect": "^3.16.12",
     "express": "^5.1.0",
     "fp-ts": "^2.16.10",
     "neverthrow": "^8.2.0",
