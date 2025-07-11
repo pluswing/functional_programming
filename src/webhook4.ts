@@ -47,7 +47,6 @@ const storePost = async (post: BlogPostWithoutId): Promise<BlogPost> => {
 }
 
 const sendWebhook = async (post: BlogPost): Promise<number> => {
-  throw new Error("AAAA")
   // NetworkErrorでるかも。
   // const res = await fetch("https://xxxxx", {
   //   method: "POST",
@@ -99,29 +98,28 @@ app.post("/", async (req, res) => {
     const status = yield* Effect.retry(sendWebhookR(post2), {times: 3})
     yield* storeWebhookResultR(post2, status)
     return {post: post2, status}
-  })
-
-  await Effect.runPromise(program).then(
-    ({post, status}) => {
+  }).pipe(
+    Effect.match({
+      onSuccess: ({post, status}) => {
         res.json({post_id: post.id, status })
-    },
-    (err) => {
-      console.log(err)
-      switch (err._kind) {
-        case "validate_error": {
-          res.status(400).send(err.message)
-          break
+      },
+      onFailure: (err) => {
+        switch (err._kind) {
+          case "validate_error": {
+            res.status(400).send(err.message)
+            break
+          }
+          case "database_error":
+          case "network_error": {
+            res.status(500).send(err.message)
+            break
+          }
         }
-        case "database_error":
-        case "network_error": {
-          res.status(500).send(err.message)
-          break
-        }
-      }
-    },
-  ).catch((err) => {
-    console.log("!!" + err)
-  })
+      },
+    })
+  )
+
+  await Effect.runPromise(program)
 })
 
 app.listen(3000)

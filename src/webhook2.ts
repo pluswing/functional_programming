@@ -42,8 +42,6 @@ const ValidateError = (message: string): ValidateError => {
   return {_kind: "validate_error", message}
 }
 
-type AppError = DatabaseError | NetworkError | ValidateError
-
 
 const validatePost = (post: BlogPostWithoutId): boolean => {
   return post.title.length > 0;
@@ -68,16 +66,16 @@ const storeWebhookResult = async (post: BlogPost, status: number): Promise<void>
   return
 }
 
-const validatePostR = (post: BlogPostWithoutId): Either<AppError, BlogPostWithoutId> =>
+const validatePostR = (post: BlogPostWithoutId): Either<ValidateError, BlogPostWithoutId> =>
   validatePost(post) ? E.right(post) : E.left(ValidateError("validate error"))
 
-const storePostR = (post: BlogPostWithoutId): TaskEither<AppError, BlogPost> =>
+const storePostR = (post: BlogPostWithoutId): TaskEither<DatabaseError, BlogPost> =>
   TE.tryCatch(() => storePost(post), (e: any) => DatabaseError(e.message))
 
-const sendWebhookR = (post: BlogPost): TaskEither<AppError, number> =>
+const sendWebhookR = (post: BlogPost): TaskEither<NetworkError, number> =>
   TE.tryCatch(() => sendWebhook(post), (e: any) => NetworkError(e.message))
 
-const storeWebhookResultR = (post: BlogPost, status: number): TaskEither<AppError, void> =>
+const storeWebhookResultR = (post: BlogPost, status: number): TaskEither<DatabaseError, void> =>
   TE.tryCatch(() => storeWebhookResult(post, status), (e: any) => DatabaseError(e.message))
 
 import express from "express"
@@ -93,8 +91,8 @@ app.post("/", async (req, res) => {
   const program = pipe(
     TE.Do,
     () => TE.fromEither(validatePostR(post)),
-    TE.bind('post', () => storePostR(post)),
-    TE.bind('status', ({ post }) => sendWebhookR(post)),
+    TE.bindW('post', () => storePostR(post)),
+    TE.bindW('status', ({ post }) => sendWebhookR(post)),
     TE.tap(({post, status}) => storeWebhookResultR(post, status)),
     TE.fold(
       (left) => async () => {
