@@ -101,8 +101,7 @@ app.post("/", async (req, res) => {
     return {post: post2, status}
   })
 
-  await Effect.runPromise(program)
-    then(
+  await Effect.runPromise(program).then(
     ({post, status}) => {
         res.json({post_id: post.id, status })
     },
